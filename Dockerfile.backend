@@ -1,0 +1,16 @@
+# NovelCraft Backend Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY pyproject.toml .
+RUN pip install --no-cache-dir -e .
+
+# Copy source code
+COPY src/ai_agent ./src/ai_agent
+COPY src/ai_agent/pyproject.toml ./src/ai_agent/pyproject.toml 2>/dev/null || true
+
+EXPOSE 8000
+
+CMD ["uvicorn", "ai_agent.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NovelCraft - AI 小说创作助手</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            padding: 40px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #888;
+            font-size: 1rem;
+        }
+
+        .main-layout {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 30px;
+        }
+
+        .chat-section {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 24px;
+            min-height: 600px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding-right: 10px;
+            margin-bottom: 20px;
+        }
+
+        .message {
+            margin-bottom: 16px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            text-align: right;
+        }
+
+        .message-content {
+            display: inline-block;
+            padding: 12px 16px;
+            border-radius: 12px;
+            max-width: 80%;
+            line-height: 1.6;
+        }
+
+        .message.user .message-content {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .message.assistant .message-content {
+            background: rgba(255,255,255,0.1);
+        }
+
+        .message .meta {
+            font-size: 0.75rem;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .draft-display {
+            background: rgba(102, 126, 234, 0.1);
+            border: 1px solid rgba(102, 126, 234, 0.3);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+            font-family: "Georgia", serif;
+            line-height: 1.8;
+            white-space: pre-wrap;
+        }
+
+        .status-bar {
+            background: rgba(255,255,255,0.05);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 16px;
+        }
+
+        .status-bar .agent {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .interrupt-panel {
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid rgba(255, 193, 7, 0.3);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 16px 0;
+        }
+
+        .interrupt-panel h4 {
+            color: #ffc107;
+            margin-bottom: 12px;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: #e0e0e0;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .btn-accept {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-rewrite {
+            background: #ffc107;
+            color: #000;
+        }
+
+        .btn-restart {
+            background: #dc3545;
+            color: white;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .input-group {
+            flex: 1;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 0.85rem;
+            color: #888;
+            margin-bottom: 6px;
+        }
+
+        select, input, textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            background: rgba(255,255,255,0.05);
+            color: #e0e0e0;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+        }
+
+        select:focus, input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .panel {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 20px;
+        }
+
+        .panel h3 {
+            font-size: 1rem;
+            color: #888;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .outline-tree {
+            font-size: 0.9rem;
+        }
+
+        .outline-act {
+            margin-bottom: 12px;
+            padding-left: 12px;
+            border-left: 2px solid #667eea;
+        }
+
+        .outline-chapter {
+            padding: 4px 0;
+            color: #aaa;
+        }
+
+        .outline-chapter::before {
+            content: "•";
+            margin-right: 8px;
+            color: #667eea;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 16px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #667eea;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+            .sidebar {
+                order: -1;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>NovelCraft</h1>
+            <p class="subtitle">AI 驱动的多智能体小说创作助手</p>
+        </header>
+
+        <div class="main-layout">
+            <div class="chat-section">
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message assistant">
+                        <div class="message-content">
+                            👋 欢迎使用 NovelCraft！<br><br>
+                            告诉我你的小说想法，比如：<br>
+                            <em>"我要写一个仙侠小说，主角是废柴逆袭"</em><br><br>
+                            我会帮你生成大纲并创作正文。
+                        </div>
+                    </div>
+                </div>
+
+                <div class="status-bar" id="statusBar" style="display: none;">
+                    <span id="statusText"></span>
+                </div>
+
+                <div class="interrupt-panel" id="interruptPanel" style="display: none;">
+                    <h4>⏸️ 等待确认</h4>
+                    <p id="interruptMessage"></p>
+                    <div class="btn-group">
+                        <button class="btn-accept" onclick="handleChoice('accept')">✅ 接受</button>
+                        <button class="btn-rewrite" onclick="handleChoice('rewrite')">🔄 重写</button>
+                        <button class="btn-restart" onclick="handleChoice('restart')">🔙 重新开始</button>
+                    </div>
+                </div>
+
+                <div class="input-area">
+                    <div class="input-group">
+                        <label for="genreSelect">题材</label>
+                        <select id="genreSelect">
+                            <option value="仙侠">仙侠</option>
+                            <option value="修仙">修仙</option>
+                            <option value="奇幻">奇幻</option>
+                            <option value="悬疑">悬疑</option>
+                            <option value="言情">言情</option>
+                            <option value="科幻">科幻</option>
+                        </select>
+                    </div>
+                    <div class="input-group" style="flex: 2;">
+                        <label for="requestInput">你的小说需求</label>
+                        <input type="text" id="requestInput" placeholder="例如：我要写一个仙侠小说，主角是废柴逆袭...">
+                    </div>
+                    <button class="btn-primary" id="sendBtn" onclick="sendMessage()">
+                        发送
+                    </button>
+                </div>
+            </div>
+
+            <div class="sidebar">
+                <div class="panel">
+                    <h3>创作统计</h3>
+                    <div class="stats">
+                        <div class="stat-item">
+                            <div class="stat-value" id="chapterCount">0</div>
+                            <div class="stat-label">已完成章节</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-value" id="wordCount">0</div>
+                            <div class="stat-label">创作字数</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h3>大纲预览</h3>
+                    <div class="outline-tree" id="outlineTree">
+                        <p style="color: #666;">暂无大纲</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let threadId = null;
+        let eventSource = null;
+        let currentDraft = '';
+        let isGenerating = false;
+
+        async function sendMessage() {
+            const request = document.getElementById('requestInput').value.trim();
+            const genre = document.getElementById('genreSelect').value;
+
+            if (!request || isGenerating) return;
+
+            // Add user message
+            addMessage('user', request);
+
+            // Clear input
+            document.getElementById('requestInput').value = '';
+
+            // Create session if needed
+            if (!threadId) {
+                const sessionRes = await fetch('/api/session', { method: 'POST' });
+                const sessionData = await sessionRes.json();
+                threadId = sessionData.thread_id;
+            }
+
+            // Show status
+            showStatus('正在连接...');
+            isGenerating = true;
+            document.getElementById('sendBtn').disabled = true;
+
+            // Connect SSE
+            const url = `/api/chat?thread_id=${encodeURIComponent(threadId)}&message=${encodeURIComponent(request)}&genre=${encodeURIComponent(genre)}`;
+
+            // Use EventSource for SSE
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            // For simplicity, use fetch with ReadableStream
+            startGeneration(url);
+        }
+
+        async function startGeneration(url) {
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const event = JSON.parse(line.slice(6));
+                                handleSSEEvent(event);
+                            } catch (e) {
+                                console.error('Parse error:', e);
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Generation error:', error);
+                showStatus('生成失败: ' + error.message);
+            } finally {
+                isGenerating = false;
+                document.getElementById('sendBtn').disabled = false;
+            }
+        }
+
+        function handleSSEEvent(event) {
+            switch (event.type) {
+                case 'status':
+                    showStatus(event.message || event.data?.agent || '处理中...');
+                    if (event.message?.includes('大纲')) {
+                        addMessage('assistant', '📋 大纲已生成！');
+                    }
+                    break;
+
+                case 'outline':
+                    updateOutline(event.data);
+                    break;
+
+                case 'draft_delta':
+                    currentDraft += event.data;
+                    updateDraftDisplay();
+                    break;
+
+                case 'interrupt':
+                    showInterruptPanel(event.data);
+                    break;
+
+                case 'complete':
+                    showStatus('✅ 生成完成');
+                    hideInterruptPanel();
+                    updateStats();
+                    break;
+
+                case 'error':
+                    showStatus('❌ 错误: ' + event.message);
+                    break;
+            }
+        }
+
+        function addMessage(role, content) {
+            const messages = document.getElementById('chatMessages');
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+            div.innerHTML = `<div class="message-content">${escapeHtml(content)}</div>`;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function showStatus(text) {
+            const statusBar = document.getElementById('statusBar');
+            const statusText = document.getElementById('statusText');
+            statusBar.style.display = 'block';
+            statusText.innerHTML = text.startsWith('正在') ? '<span class="loading"></span>' + text : text;
+        }
+
+        function updateDraftDisplay() {
+            const messages = document.getElementById('chatMessages');
+            let draftEl = document.getElementById('currentDraft');
+
+            if (!draftEl) {
+                draftEl = document.createElement('div');
+                draftEl.id = 'currentDraft';
+                draftEl.className = 'draft-display';
+                messages.appendChild(draftEl);
+            }
+
+            draftEl.textContent = currentDraft;
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function updateOutline(outline) {
+            const tree = document.getElementById('outlineTree');
+            let html = '';
+
+            for (const [actKey, actData] of Object.entries(outline)) {
+                if (actKey.startsWith('act')) {
+                    html += `<div class="outline-act">`;
+                    html += `<strong>${actData.name || actKey}</strong>`;
+                    if (actData.chapters) {
+                        for (const ch of actData.chapters) {
+                            html += `<div class="outline-chapter">第${ch.ch_num}章: ${ch.title}</div>`;
+                        }
+                    }
+                    html += `</div>`;
+                }
+            }
+
+            tree.innerHTML = html || '<p style="color: #666;">大纲解析中...</p>';
+        }
+
+        function showInterruptPanel(data) {
+            const panel = document.getElementById('interruptPanel');
+            const message = document.getElementById('interruptMessage');
+            panel.style.display = 'block';
+            message.textContent = `第${data.chapter || '?'}章草稿已生成，请审阅。`;
+            hideStatus();
+        }
+
+        function hideInterruptPanel() {
+            document.getElementById('interruptPanel').style.display = 'none';
+            currentDraft = '';
+        }
+
+        function hideStatus() {
+            document.getElementById('statusBar').style.display = 'none';
+        }
+
+        async function handleChoice(choice) {
+            if (!threadId) return;
+
+            hideInterruptPanel();
+            showStatus('正在处理...');
+
+            try {
+                const response = await fetch('/api/resume', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        thread_id: threadId,
+                        choice: choice,
+                    }),
+                });
+
+                if (response.ok) {
+                    if (choice === 'accept') {
+                        addMessage('assistant', '✅ 章节已保存！');
+                        updateStats();
+                    } else if (choice === 'restart') {
+                        addMessage('assistant', '🔄 开始新创作...');
+                        document.getElementById('outlineTree').innerHTML = '<p style="color: #666;">暂无大纲</p>';
+                        currentDraft = '';
+                        const draftEl = document.getElementById('currentDraft');
+                        if (draftEl) draftEl.remove();
+                    }
+                }
+            } catch (error) {
+                console.error('Resume error:', error);
+            }
+
+            hideStatus();
+        }
+
+        function updateStats() {
+            const chapterEl = document.getElementById('chapterCount');
+            const wordEl = document.getElementById('wordCount');
+            chapterEl.textContent = parseInt(chapterEl.textContent) + 1;
+            wordEl.textContent = parseInt(wordEl.textContent) + (currentDraft.length || 2000);
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

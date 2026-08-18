@@ -1,0 +1,205 @@
+# NovelCraft CI Pipeline
+# ========================
+# 触发条件：push 到 main/maintain 分支，或任意 PR
+# 覆盖：lint / type / redlines / pytest / pytest-cov
+#
+# Docker 服务：postgres（用于 alembic check + 集成测试）、redis
+
+name: CI
+
+on:
+  push:
+    branches: [main, maintain]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # Job 1: Quality Gates（无 Docker 依赖，快速失败）
+  # ─────────────────────────────────────────────────────────────────
+  quality-gates:
+    name: quality-gates
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Ruff lint（中文标点友好）
+        run: uv run ruff check --select E,W,F,I,B,C4,UP,N,SIM,PT src/ tests/ scripts/
+
+      - name: Ruff format check
+        run: uv run ruff format --check src/ tests/ scripts/
+
+      - name: MyPy strict
+        run: uv run mypy src/
+
+      - name: AI Red Lines scan
+        run: uv run python scripts/check_red_lines.py
+
+  # ─────────────────────────────────────────────────────────────────
+  # Job 2: Unit Tests（无 Docker 依赖）
+  # ─────────────────────────────────────────────────────────────────
+  unit-tests:
+    name: unit-tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Unit tests
+        run: uv run pytest -o addopts="" tests/unit -v --tb=short
+
+  # ─────────────────────────────────────────────────────────────────
+  # Job 3: Integration Tests（需要 Docker：postgres + redis）
+  # ─────────────────────────────────────────────────────────────────
+  integration-tests:
+    name: integration-tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: novelcraft
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: novelcraft
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 3s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Alembic check
+        run: uv run alembic check
+        env:
+          DATABASE_URL: postgresql://novelcraft:password@localhost:5432/novelcraft
+
+      - name: Integration tests
+        run: uv run pytest -o addopts="" tests/integration -v --tb=short
+        env:
+          REDIS_URL: redis://localhost:6379/0
+          DATABASE_URL: postgresql://novelcraft:password@localhost:5432/novelcraft
+          MINMAX_API_KEY: dummy-for-ci
+          OPENAI_API_KEY: dummy-for-ci
+
+  # ─────────────────────────────────────────────────────────────────
+  # Job 4: Coverage Report（汇聚所有测试结果）
+  # ─────────────────────────────────────────────────────────────────
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests]
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: novelcraft
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: novelcraft
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Coverage report
+        run: uv run pytest --cov=src/ai_agent --cov-report=xml --cov-report=term-missing tests/
+        env:
+          REDIS_URL: redis://localhost:6379/0
+          DATABASE_URL: postgresql://novelcraft:password@localhost:5432/novelcraft
+          MINMAX_API_KEY: dummy-for-ci
+          OPENAI_API_KEY: dummy-for-ci
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false  # PoC 阶段允许覆盖率不足不阻断
+
+      - name: Coverage summary
+        run: |
+          echo ""
+          echo "=== Coverage Summary ==="
+          cat coverage/term-missing.txt 2>/dev/null || echo "coverage report not available"

@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+ENV/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+dist/
+build/
+.tox/
+
+# 环境 / 密钥
+.env
+.env.*
+!.env.example
+secrets/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 数据 / 日志
+data/
+logs/
+*.log
+*.sqlite
+*.db
+
+# 文档构建
+docs/_build/
+site/
+
+# 临时文件
+tmp/
+temp/
+*.bak

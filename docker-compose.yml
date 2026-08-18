@@ -1,0 +1,85 @@
+# NovelCraft PoC - docker-compose.yml
+# ============================================================
+# 一键拉起 NovelCraft PoC 服务
+#
+# 用法：
+#     docker compose up -d         # 后台启动
+#     docker compose down          # 停止并清理
+#     docker compose logs -f       # 查看日志
+#
+# 服务：
+#     - backend : FastAPI 后端服务
+#     - frontend : Next.js 前端 (可选)
+# ============================================================
+
+name: novel-craft-poc
+
+services:
+  # ────────────────────────────────────────────────────────────
+  # Redis（LangGraph Checkpointer）
+  # ────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: novel-craft-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  # ────────────────────────────────────────────────────────────
+  # FastAPI Backend
+  # ────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: novel-craft-backend
+    environment:
+      - MINMAX_API_KEY=${MINMAX_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - REDIS_URL=redis://redis:6379/0
+      - APP_ENV=development
+      - DEBUG=true
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src:ro
+      - ./skills:/app/skills:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  # ────────────────────────────────────────────────────────────
+  # Next.js Frontend (PoC 阶段可选)
+  # ────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: novel-craft-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+networks:
+  default:
+    name: novel-craft-network
+
+volumes:
+  redis_data:
