@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # === Redis 配置（LangGraph Checkpointer）===
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
 
+    # === Qdrant 配置（向量数据库 - 风格特征存储）===
+    qdrant_url: str = Field(default="http://localhost:6333", alias="QDRANT_URL")
+    qdrant_collection: str = Field(default="novelcraft_styles", alias="QDRANT_COLLECTION")
+
     # === JWT Auth ===
     jwt_secret: str = Field(default="change-me-in-production", alias="JWT_SECRET")
     jwt_expire_hours: int = 24

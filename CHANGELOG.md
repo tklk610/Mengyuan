@@ -6,11 +6,19 @@
 
 ---
 
-## [0.3.0] - Unreleased
+## [0.3.0] - 2026-08-19
 
 ### Added（新增）
 
--
+- **Phase 2: 风格学习与记忆** —— 完成 AC-1 ~ AC-6 全部验收标准
+  - `src/ai_agent/agents/stylist_agent.py` —— Stylist Agent 风格控制
+  - `src/ai_agent/rag/qdrant_client.py` —— Qdrant 向量存储客户端
+  - `src/ai_agent/rag/embeddings.py` —— Embedding 生成
+  - `src/ai_agent/rag/style_analyzer.py` —— LLM 风格特征提取
+  - `src/ai_agent/main.py` —— `/api/styles`, `/api/preferences` 端点
+  - `src/ai_agent/agents/novel_agent.py` —— Scribe Agent 风格约束注入
+  - `tests/integration/test_style_learning.py` —— 风格学习集成测试（11/11 通过）
+  - `tests/unit/rag/test_style_learning_unit.py` —— 风格学习单元测试（4/4 通过）
 
 ## [0.2.0] - 2026-08-17
 
@@ -147,7 +155,7 @@
 
 | 版本 | 日期 | 主要变更 |
 | --- | --- | --- |
-| 0.3.0 | Unreleased | Phase 2: 风格学习与记忆（规划中） |
+| 0.3.0 | 2026-08-19 | Phase 2: 风格学习与记忆完成 |
 | 0.2.0 | 2026-08-17 | NovelCraft PoC Phase 1 完成 |
 | 0.2.0 | 2026-08-04 | 4 agents 重构至 v2.0 |
 | 0.1.0 | 2026-07-31 | init —— 约束环境初始化 |

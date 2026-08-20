@@ -22,6 +22,12 @@ from ai_agent.schemas.chat import (
     ChatRequest,
     ResumeRequest,
     SessionCreateResponse,
+    StyleProfileCreate,
+    StyleProfileResponse,
+    StyleSearchRequest,
+    StyleSearchResponse,
+    UserPreferenceUpdate,
+    UserPreferenceResponse,
 )
 
 structlog.configure(
@@ -69,6 +75,9 @@ app.include_router(v1_router)
 # === In-Memory Session Store ===
 # Key = f"{user_id}:{thread_id}" — 用户隔离
 _sessions: dict[str, dict] = {}  # {(user_id, thread_id) -> session}
+
+# === In-Memory User Preferences Store ===
+_user_preferences: dict[str, dict] = {}  # {user_id -> preferences}
 
 
 def _session_key(user_id: str, thread_id: str) -> str:
@@ -284,6 +293,159 @@ async def resume(
     except Exception as e:
         logger.error("resume.error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# === Style Profile Endpoints ===
+
+@app.post("/api/styles", response_model=StyleProfileResponse)
+async def create_style_profile(
+    request: StyleProfileCreate,
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
+) -> StyleProfileResponse:
+    """创建风格档案（需认证）
+
+    分析用户提供的小说文本样本，提取风格特征并存储。
+    """
+    if credentials is None or credentials.credentials is None:
+        raise HTTPException(status_code=401, detail="Missing token")
+    payload = verify_token(credentials.credentials)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = payload.sub
+
+    from ai_agent.agents.stylist_agent import stylist_agent
+
+    try:
+        profile = await stylist_agent.create_style_profile(
+            user_id=user_id,
+            name=request.name,
+            text_sample=request.text_sample,
+            genre_hint=request.genre_hint,
+        )
+        return StyleProfileResponse(
+            profile_id=profile["profile_id"],
+            name=profile["name"],
+            genre_tags=profile["genre_tags"],
+            characteristics=profile["characteristics"],
+            banned_words=profile["banned_words"],
+            sample_phrases=profile["sample_phrases"],
+        )
+    except Exception as e:
+        logger.error("style.create.failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.get("/api/styles", response_model=list[StyleProfileResponse])
+async def list_style_profiles(
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
+) -> list[StyleProfileResponse]:
+    """列出用户所有风格档案（需认证）"""
+    if credentials is None or credentials.credentials is None:
+        raise HTTPException(status_code=401, detail="Missing token")
+    payload = verify_token(credentials.credentials)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = payload.sub
+
+    from ai_agent.agents.stylist_agent import stylist_agent
+
+    try:
+        profiles = await stylist_agent.list_user_styles(user_id)
+        return [
+            StyleProfileResponse(
+                profile_id=p.get("id", ""),
+                name=p.get("name", ""),
+                genre_tags=p.get("genre_tags", []),
+                characteristics=p.get("characteristics", {}),
+                banned_words=[],
+                sample_phrases=[],
+            )
+            for p in profiles
+        ]
+    except Exception as e:
+        logger.error("style.list.failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.post("/api/styles/search", response_model=StyleSearchResponse)
+async def search_similar_styles(
+    request: StyleSearchRequest,
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
+) -> StyleSearchResponse:
+    """搜索相似风格（需认证）
+
+    根据文本样本查找相似的风格档案。
+    """
+    if credentials is None or credentials.credentials is None:
+        raise HTTPException(status_code=401, detail="Missing token")
+    payload = verify_token(credentials.credentials)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = payload.sub
+
+    from ai_agent.agents.stylist_agent import stylist_agent
+
+    try:
+        styles = await stylist_agent.find_similar_styles(
+            text_sample=request.text_sample,
+            user_id=user_id,
+        )
+        return StyleSearchResponse(styles=styles)
+    except Exception as e:
+        logger.error("style.search.failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# === User Preferences Endpoints ===
+
+@app.get("/api/preferences", response_model=UserPreferenceResponse)
+async def get_preferences(
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
+) -> UserPreferenceResponse:
+    """获取用户偏好（需认证）"""
+    if credentials is None or credentials.credentials is None:
+        raise HTTPException(status_code=401, detail="Missing token")
+    payload = verify_token(credentials.credentials)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = payload.sub
+
+    prefs = _user_preferences.get(user_id, {})
+    return UserPreferenceResponse(
+        user_id=user_id,
+        narrative_pov=prefs.get("narrative_pov", "第三人称"),
+        target_word_count=prefs.get("target_word_count", 3000),
+        ending_preference=prefs.get("ending_preference", "HE"),
+        pacing_preference=prefs.get("pacing_preference", "中等"),
+        avoid_elements=prefs.get("avoid_elements", []),
+        preferred_tones=prefs.get("preferred_tones", []),
+    )
+
+
+@app.put("/api/preferences", response_model=UserPreferenceResponse)
+async def update_preferences(
+    request: UserPreferenceUpdate,
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
+) -> UserPreferenceResponse:
+    """更新用户偏好（需认证）"""
+    if credentials is None or credentials.credentials is None:
+        raise HTTPException(status_code=401, detail="Missing token")
+    payload = verify_token(credentials.credentials)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = payload.sub
+
+    _user_preferences[user_id] = {
+        "narrative_pov": request.narrative_pov,
+        "target_word_count": request.target_word_count,
+        "ending_preference": request.ending_preference,
+        "pacing_preference": request.pacing_preference,
+        "avoid_elements": request.avoid_elements,
+        "preferred_tones": request.preferred_tones,
+    }
+    logger.info("preferences.updated", user_id=user_id)
+
+    return UserPreferenceResponse(user_id=user_id, **_user_preferences[user_id])
 
 
 # === Helper Functions ===

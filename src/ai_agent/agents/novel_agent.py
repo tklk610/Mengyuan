@@ -3,6 +3,7 @@
 PoC 版本的 Deep Agents 配置，包含:
 - Narrator Agent (剧情规划)
 - Scribe Agent (续写执行)
+- Stylist Agent (风格控制)
 - HITL 中断机制
 """
 from __future__ import annotations
@@ -12,7 +13,6 @@ from typing import Literal
 
 import structlog
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint.redis import RedisSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.store.memory import InMemoryStore
 from langgraph.types import Command, interrupt
@@ -26,10 +26,49 @@ from ai_agent.prompts.loader import prompt_loader
 logger = structlog.get_logger(__name__)
 
 
+def _get_style_constraints(state: NovelState) -> str:
+    """获取风格约束字符串
+
+    Args:
+        state: 当前状态
+
+    Returns:
+        风格约束字符串，如果无约束则返回空字符串
+    """
+    style_profile = state.get("style_profile")
+    if not style_profile:
+        return ""
+
+    characteristics = style_profile.get("characteristics", {})
+    banned_words = style_profile.get("banned_words", [])
+    sample_phrases = style_profile.get("sample_phrases", [])
+
+    constraints = "\n\n## 风格约束\n"
+
+    if characteristics:
+        constraints += "### 写作风格要求：\n"
+        for key, value in characteristics.items():
+            if value:
+                constraints += f"- {key}: {value}\n"
+
+    if banned_words:
+        constraints += f"\n### 避免使用的词汇：\n{'、'.join(banned_words)}\n"
+
+    if sample_phrases:
+        constraints += f"\n### 典型表达示例：\n{'；'.join(sample_phrases)}\n"
+
+    return constraints
+
+
 def _build_checkpointer():
-    """构建 checkpointer：生产用 Redis，本地无 Redis 时降级到 MemorySaver"""
+    """构建 checkpointer：生产用 Redis，本地无 Redis 时降级到 MemorySaver
+
+    Returns:
+        checkpointer 实例（保持与旧测试兼容）
+    """
     if settings.redis_url:
         try:
+            from langgraph.checkpoint.redis import RedisSaver
             checkpointer = RedisSaver(redis_url=settings.redis_url)
             checkpointer.setup()  # 初始化 Redis 连接
             return checkpointer
@@ -170,6 +209,11 @@ async def scribe_node(state: NovelState) -> Command:
         prompt = prompt.replace("{{genre_style}}", genre_guide)
         prompt = prompt.replace("{{context_window}}", state.get("context_window", "（无上下文）"))
 
+        # 注入风格约束
+        style_constraints = _get_style_constraints(state)
+        if style_constraints:
+            prompt += style_constraints
+
         # 调用 LLM 生成正文
         response = await call_llm(prompt)
         draft = response.replace("---END---", "").strip()
@@ -295,9 +339,14 @@ def build_novel_graph(*, checkpointer=None, store=None):
     # 编译
     graph = builder.compile(checkpointer=checkpointer, store=store)
 
-    checkpointer_name = (
-        "RedisSaver" if isinstance(checkpointer, RedisSaver) else "MemorySaver"
-    )
+    # 判断 checkpointer 类型
+    checkpointer_name = "RedisSaver"
+    try:
+        from langgraph.checkpoint.redis import RedisSaver
+        if not isinstance(checkpointer, RedisSaver):
+            checkpointer_name = "MemorySaver"
+    except Exception:
+        checkpointer_name = "MemorySaver"
     logger.info("novel_graph.built", checkpointer=checkpointer_name)
     return graph
 

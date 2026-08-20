@@ -32,6 +32,8 @@ dependencies = [
     # --- 数据库 ---
     "asyncpg>=0.29.0",
     "sqlalchemy[asyncio]>=2.0.0",
+    # --- 向量数据库 ---
+    "qdrant-client>=1.9.0",
     # --- JWT Auth ---
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
