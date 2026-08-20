@@ -15,7 +15,7 @@
 | T05 | 实现 `GET /api/sessions` 列出历史会话 | ≤ 2h | @engineer | - | ✅ |
 | T06 | 实现 `GET /api/sessions/{id}` 加载会话 | ≤ 2h | @engineer | T05 | ✅ |
 | T07 | 实现大纲编辑端点 `PUT /api/outline` | ≤ 3h | @engineer | - | ✅ |
-| T08 | 实现敏感词检测中间件 | ≤ 2h | @engineer | - | ⏳ |
+| T08 | 实现敏感词检测中间件 | ≤ 2h | @engineer | - | ✅ |
 | T09 | 新增 Phase 3 测试用例 | ≤ 3h | @engineer | T04,T05 | ✅ |
 | T10 | 代码评审 | ≤ 1h | @reviewer | T09 | ✅ |
 

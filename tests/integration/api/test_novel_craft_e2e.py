@@ -30,23 +30,37 @@ from tests.conftest import NARRATOR_RESPONSE, SCRIBE_RESPONSE, TEST_USER_ID
 # ============================================================================
 
 def make_mock_llm(narrator_response: str, scribe_response: str):
-    """Create a mock LLM whose ainvoke() is an AsyncMock with sequential responses.
+    """Create a mock LLM that responds based on prompt type.
 
-    The mock persists across interrupt + resume because we patch at the
-    novel_agent module level (not the call site) and use AsyncMock so
-    asyncio.wait_for in ainvoke_with_timeout can properly await it.
+    - intent prompt → intent JSON
+    - planner prompt → plan JSON
+    - narrator prompt → NARRATOR_RESPONSE
+    - scribe prompt → SCRIBE_RESPONSE
     """
-    call_count = 0
+    INTENT_RESPONSE = '{"intent": "new_story", "confidence": 0.9, "reasoning": "用户请求创作新故事"}'
+    PLANNER_RESPONSE = json.dumps({
+        "tasks": [
+            {"task_id": "task-1", "type": "world_building", "description": "构建世界观", "dependencies": [], "estimated_words": 500},
+            {"task_id": "task-2", "type": "chapter_write", "description": "创作第一章", "dependencies": ["task-1"], "estimated_words": 3000},
+        ],
+        "estimated_total_words": 3000,
+        "estimated_chapters": 1,
+        "story_arc": "少年修仙奇遇"
+    })
 
     async def mock_ainvoke(prompt: str) -> MagicMock:
-        nonlocal call_count
-        call_count += 1
-        content = narrator_response if call_count == 1 else scribe_response
         result = MagicMock()
-        result.content = content
-        result.usage = MagicMock(
-            prompt_tokens=10, completion_tokens=10, total_tokens=20
-        )
+        result.usage = MagicMock(prompt_tokens=10, completion_tokens=10, total_tokens=20)
+
+        if "分析用户意图" in prompt:
+            result.content = INTENT_RESPONSE
+        elif "请根据以上信息，规划" in prompt:
+            result.content = PLANNER_RESPONSE
+        elif "narrator" in prompt.lower() or "大纲" in prompt:
+            result.content = narrator_response
+        else:
+            result.content = scribe_response
+
         return result
 
     llm = MagicMock()

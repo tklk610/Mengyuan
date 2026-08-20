@@ -22,6 +22,24 @@ class NovelState(TypedDict):
     genre: str
     """小说题材"""
 
+    # === 意图识别 ===
+    intent: str | None
+    """识别到的用户意图"""
+    intent_confidence: float | None
+    """意图识别置信度"""
+    intent_reasoning: str | None
+    """意图识别理由"""
+
+    # === 智能规划 ===
+    task_plan: list[dict] | None
+    """任务分解计划 [{task_id, description, estimated_words, dependencies, status}]"""
+    current_task_id: str | None
+    """当前执行的子任务ID"""
+    task_status: dict | None
+    """任务状态映射 {task_id: pending/in_progress/completed}"""
+    world_building: dict | None
+    """世界观设定"""
+
     # === 创作内容 ===
     outline: dict | None
     """结构化大纲（Narrator 生成）"""
@@ -38,7 +56,7 @@ class NovelState(TypedDict):
 
     # === 控制信号 ===
     phase: NotRequired[Literal[
-        "idle", "planning", "writing", "waiting_approval", "complete"
+        "idle", "intent", "planning", "writing", "waiting_approval", "complete"
     ]]
     """当前阶段"""
     interrupt_type: NotRequired[str | None]
@@ -53,3 +71,7 @@ class NovelState(TypedDict):
     # === 错误处理 ===
     error: str | None
     """错误信息"""
+
+    # === 任务委派（Subagent） ===
+    delegation_result: dict | None
+    """Subagent 任务委派结果"""
