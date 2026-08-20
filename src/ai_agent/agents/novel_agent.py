@@ -139,7 +139,7 @@ async def narrator_node(state: NovelState) -> dict:
         return {
             "outline": outline_data.get("outline", {}),
             "characters": outline_data.get("characters", {}),
-            "phase": "planning_complete",
+            "phase": "planning",
             "messages": [
                 {"role": "assistant", "content": f"📋 大纲已生成：{outline_data.get('title', '未命名')}"}
             ],
@@ -241,16 +241,45 @@ async def scribe_node(state: NovelState) -> Command:
     # 其中 "choice" 字段才是用户选择的字符串（accept/rewrite/restart）
     user_choice = choice.get("choice") if isinstance(choice, dict) else choice
     if user_choice == "accept":
-        return Command(
-            update={
-                "draft": draft,
-                "phase": "complete",
-                "messages": [{"role": "assistant", "content": f"✅ 第{chapter_num}章已完成"}],
-                "interrupt_options": None,
-                "interrupt_value": None,
-            },
-            goto=END,
-        )
+        current = state["current_chapter"]
+        total = state.get("total_chapters", 1)
+
+        # 保存当前章节到已完成列表
+        completed_chapter = {
+            "chapter": current,
+            "title": state.get("outline", {}).get(f"ch_{current}_title", f"第{current}章"),
+            "draft": draft,
+            "word_count": len(draft),
+        }
+
+        if current < total:
+            # 还有下一章
+            next_chapter = current + 1
+            return Command(
+                update={
+                    "draft": None,
+                    "completed_chapters": [completed_chapter],
+                    "current_chapter": next_chapter,
+                    "phase": "writing",
+                    "messages": [{"role": "assistant", "content": f"✅ 第{current}章已完成，开始第{next_chapter}章"}],
+                    "interrupt_options": None,
+                    "interrupt_value": None,
+                },
+                goto="scribe",
+            )
+        else:
+            # 最后一章完成
+            return Command(
+                update={
+                    "draft": draft,
+                    "completed_chapters": [completed_chapter],
+                    "phase": "complete",
+                    "messages": [{"role": "assistant", "content": f"✅ 第{current}章已完成，全书创作完毕！"}],
+                    "interrupt_options": None,
+                    "interrupt_value": None,
+                },
+                goto=END,
+            )
     elif user_choice == "rewrite":
         return Command(
             update={
@@ -269,6 +298,8 @@ async def scribe_node(state: NovelState) -> Command:
                 "characters": None,
                 "draft": None,
                 "current_chapter": 1,
+                "total_chapters": 3,
+                "completed_chapters": [],
                 "phase": "idle",
                 "messages": [{"role": "assistant", "content": "🔄 开始新创作..."}],
                 "interrupt_options": None,
@@ -279,10 +310,18 @@ async def scribe_node(state: NovelState) -> Command:
 
 
 def _router(state: NovelState) -> Literal["narrator", "scribe", "__end__"]:
-    """路由函数 — 根据当前状态决定下一步（不修改状态）"""
-    if state.get("phase") == "idle" and not state.get("outline"):
+    """路由函数 — 根据当前状态决定下一步（不修改状态）
+
+    多章节流程：
+    - idle + 无大纲 → narrator（生成全章节大纲）
+    - 有大纲 + phase在(writing/planning) + 无当前草稿 → scribe（生成当前章节）
+    - phase == complete → __end__
+    """
+    phase = state.get("phase", "idle")
+
+    if phase == "idle" and not state.get("outline"):
         return "narrator"
-    elif state.get("outline") and not state.get("draft"):
+    elif state.get("outline") and state.get("draft") is None and phase in ("planning", "writing"):
         return "scribe"
     else:
         return "__end__"

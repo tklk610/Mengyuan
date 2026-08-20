@@ -6,6 +6,20 @@
 
 ---
 
+## [0.4.0] - Unreleased
+
+### Added（新增）
+
+- **Phase 3: 高级功能** —— 进行中
+  - 多章节创作流程（`total_chapters` 参数，章节递增）
+  - `POST /api/export` —— txt 格式导出端点
+  - `GET /api/sessions` —— 列出历史会话
+  - `GET /api/sessions/{thread_id}` —— 获取会话详情
+  - `PUT /api/outline` —— 大纲编辑端点
+  - `src/ai_agent/exporters/` —— 导出模块
+  - `src/ai_agent/agents/state.py` —— 新增 `total_chapters`, `completed_chapters` 字段
+  - `tests/integration/api/test_phase3_features.py` —— Phase 3 集成测试（10 tests）
+
 ## [0.3.0] - 2026-08-19
 
 ### Added（新增）
@@ -155,6 +169,7 @@
 
 | 版本 | 日期 | 主要变更 |
 | --- | --- | --- |
+| 0.4.0 | Unreleased | Phase 3: 多章节创作/导出/历史会话 |
 | 0.3.0 | 2026-08-19 | Phase 2: 风格学习与记忆完成 |
 | 0.2.0 | 2026-08-17 | NovelCraft PoC Phase 1 完成 |
 | 0.2.0 | 2026-08-04 | 4 agents 重构至 v2.0 |

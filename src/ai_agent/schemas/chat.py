@@ -19,6 +19,9 @@ class ChatRequest(BaseModel):
     genre: Literal["仙侠", "修仙", "奇幻", "悬疑", "言情", "科幻"] = Field(
         default="仙侠", description="小说题材"
     )
+    total_chapters: int = Field(
+        default=3, ge=1, le=100, description="计划创作章节数"
+    )
 
 
 class ResumeRequest(BaseModel):
@@ -127,3 +130,55 @@ class UserPreferenceResponse(UserPreferenceBase):
     """用户偏好响应"""
 
     user_id: str
+
+
+# === 导出 Schema ===
+
+class ExportRequest(BaseModel):
+    """导出请求"""
+
+    thread_id: str = Field(..., description="会话线程 ID")
+    title: str = Field(default="未命名小说", description="小说标题")
+
+
+class ExportResponse(BaseModel):
+    """导出响应"""
+
+    content: str = Field(..., description="导出的文本内容")
+    byte_count: int = Field(..., description="内容字节数")
+
+
+# === Session Schema ===
+
+class SessionInfo(BaseModel):
+    """会话信息"""
+
+    thread_id: str
+    user_id: str
+    phase: str
+    current_chapter: int
+    total_chapters: int
+    created_at: str | None = None
+
+
+class SessionListResponse(BaseModel):
+    """会话列表响应"""
+
+    sessions: list[SessionInfo]
+
+
+# === Outline Schema ===
+
+class OutlineUpdate(BaseModel):
+    """大纲更新请求"""
+
+    outline: dict = Field(..., description="更新后的大纲结构")
+    characters: dict | None = Field(default=None, description="更新后的角色设定")
+
+
+class OutlineResponse(BaseModel):
+    """大纲响应"""
+
+    outline: dict
+    characters: dict | None
+    phase: str

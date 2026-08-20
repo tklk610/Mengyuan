@@ -28,6 +28,12 @@ from ai_agent.schemas.chat import (
     StyleSearchResponse,
     UserPreferenceUpdate,
     UserPreferenceResponse,
+    ExportRequest,
+    ExportResponse,
+    SessionInfo,
+    SessionListResponse,
+    OutlineUpdate,
+    OutlineResponse,
 )
 
 structlog.configure(
@@ -155,7 +161,9 @@ async def chat(
                 "outline": None,
                 "characters": None,
                 "current_chapter": 1,
+                "total_chapters": request.total_chapters,
                 "draft": None,
+                "completed_chapters": [],
                 "phase": "idle",
                 "interrupt_type": None,
                 "interrupt_options": None,
@@ -192,7 +200,14 @@ async def chat(
                             if content.startswith("📋"):
                                 yield {"type": "status", "data": {"agent": "Narrator"}, "message": content}
                             elif content.startswith("✅"):
-                                yield {"type": "complete", "data": {}, "message": content}
+                                # 检查是否是最后一章完成
+                                completed = event.get("completed_chapters", [])
+                                phase = event.get("phase")
+                                if phase == "complete":
+                                    yield {"type": "complete", "data": {"chapters": completed}, "message": content}
+                                else:
+                                    # 章节完成但还有下一章
+                                    yield {"type": "chapter_complete", "data": {"chapter": event.get("current_chapter")}, "message": content}
 
         except Exception as e:
             logger.error("chat.error", error=str(e), thread_id=request.thread_id)
@@ -446,6 +461,159 @@ async def update_preferences(
     logger.info("preferences.updated", user_id=user_id)
 
     return UserPreferenceResponse(user_id=user_id, **_user_preferences[user_id])
+
+
+# === Export Endpoints ===
+
+@app.post("/api/export", response_model=ExportResponse)
+async def export_novel(
+    request: ExportRequest,
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
+) -> ExportResponse:
+    """导出小说为 txt 格式（需认证）"""
+    if credentials is None or credentials.credentials is None:
+        raise HTTPException(status_code=401, detail="Missing token")
+    payload = verify_token(credentials.credentials)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = payload.sub
+
+    session_key = _session_key(user_id, request.thread_id)
+    config = {"configurable": {"thread_id": session_key, "user_id": user_id}}
+
+    state = novel_graph.get_state(config)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    completed_chapters = state.values.get("completed_chapters", [])
+    if not completed_chapters:
+        raise HTTPException(status_code=400, detail="No completed chapters to export")
+
+    from ai_agent.exporters.txt_exporter import export_to_txt
+
+    content = export_to_txt(
+        title=request.title,
+        completed_chapters=completed_chapters,
+    )
+
+    return ExportResponse(
+        content=content,
+        byte_count=len(content.encode("utf-8")),
+    )
+
+
+# === Outline Edit Endpoint ===
+
+@app.put("/api/outline", response_model=OutlineResponse)
+async def update_outline(
+    request: OutlineUpdate,
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
+) -> OutlineResponse:
+    """更新大纲（需认证）
+
+    用户可以在 Narrator 生成大纲后，修改大纲内容，然后继续创作。
+    """
+    if credentials is None or credentials.credentials is None:
+        raise HTTPException(status_code=401, detail="Missing token")
+    payload = verify_token(credentials.credentials)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = payload.sub
+
+    # 从请求中获取 thread_id（需要在 URL 或请求体中传递）
+    # 这里暂时通过 _sessions 查找该用户最新的会话
+    user_session_keys = [
+        key for key, data in _sessions.items()
+        if data.get("user_id") == user_id
+    ]
+    if not user_session_keys:
+        raise HTTPException(status_code=404, detail="No session found")
+
+    # 使用最新的会话
+    latest_key = sorted(user_session_keys)[-1]
+    latest_thread_id = latest_key.split(":")[1]
+    session_key = _session_key(user_id, latest_thread_id)
+    config = {"configurable": {"thread_id": session_key, "user_id": user_id}}
+
+    state = novel_graph.get_state(config)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # 更新大纲
+    novel_graph.update_state(
+        config,
+        values={
+            "outline": request.outline,
+            "characters": request.characters,
+            "phase": "planning",  # 保持 planning 状态，等待用户继续
+        },
+    )
+
+    return OutlineResponse(
+        outline=request.outline,
+        characters=request.characters,
+        phase="planning",
+    )
+
+
+# === Session Management Endpoints ===
+
+@app.get("/api/sessions", response_model=SessionListResponse)
+async def list_sessions(
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
+) -> SessionListResponse:
+    """列出用户所有会话（需认证）"""
+    if credentials is None or credentials.credentials is None:
+        raise HTTPException(status_code=401, detail="Missing token")
+    payload = verify_token(credentials.credentials)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = payload.sub
+
+    # 从 _sessions 字典中过滤该用户的会话
+    user_sessions = [
+        SessionInfo(
+            thread_id=key.split(":")[1],
+            user_id=uid,
+            phase="unknown",
+            current_chapter=0,
+            total_chapters=0,
+        )
+        for key, data in _sessions.items()
+        if data.get("user_id") == user_id
+        for uid in [data.get("user_id", "")]
+    ]
+
+    return SessionListResponse(sessions=user_sessions)
+
+
+@app.get("/api/sessions/{thread_id}", response_model=SessionInfo)
+async def get_session(
+    thread_id: str,
+    credentials: HTTPAuthorizationCredentials | None = Security(_bearer),
+) -> SessionInfo:
+    """获取指定会话详情（需认证）"""
+    if credentials is None or credentials.credentials is None:
+        raise HTTPException(status_code=401, detail="Missing token")
+    payload = verify_token(credentials.credentials)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user_id = payload.sub
+
+    session_key = _session_key(user_id, thread_id)
+    config = {"configurable": {"thread_id": session_key, "user_id": user_id}}
+
+    state = novel_graph.get_state(config)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return SessionInfo(
+        thread_id=thread_id,
+        user_id=user_id,
+        phase=state.values.get("phase", "unknown"),
+        current_chapter=state.values.get("current_chapter", 0),
+        total_chapters=state.values.get("total_chapters", 0),
+    )
 
 
 # === Helper Functions ===

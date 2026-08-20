@@ -29,8 +29,12 @@ class NovelState(TypedDict):
     """角色设定"""
     current_chapter: int
     """当前章节号"""
+    total_chapters: int
+    """计划总章节数"""
     draft: str | None
     """当前草稿（Scribe 生成）"""
+    completed_chapters: list[dict]
+    """已完成章节列表 [{chapter: int, title: str, draft: str, word_count: int}]"""
 
     # === 控制信号 ===
     phase: NotRequired[Literal[

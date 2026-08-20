@@ -232,7 +232,7 @@ async def test_resume_accept_flow(client: httpx.AsyncClient) -> None:
     config = {"configurable": {"thread_id": session_key, "user_id": TEST_USER_ID}}
 
     with patch.object(novel_agent, "get_llm", return_value=mock_llm):
-        # Step A: trigger interrupt
+        # Step A: trigger interrupt (total_chapters=1 so accept ends the graph)
         async with client.stream(
             "POST",
             "/api/chat",
@@ -241,6 +241,7 @@ async def test_resume_accept_flow(client: httpx.AsyncClient) -> None:
                 "thread_id": thread_id,
                 "message": "我要写一个仙侠小说",
                 "genre": "仙侠",
+                "total_chapters": 1,
             },
         ) as resp:
             await resp.aclose()
