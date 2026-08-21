@@ -1,0 +1,101 @@
+# NovelCraft Agent Docker Sandbox
+# 容器级沙箱：操作系统隔离、安全加固、文件系统限制
+FROM python:3.11-slim
+
+# ================================================================
+# 安全加固层
+# ================================================================
+
+# 1. 避免使用 root 用户
+RUN groupadd -r agent && useradd -r -g agent agent
+
+# 2. 只安装必要的包（最小化攻击面）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 3. 设置只读文件系统标记
+# 在 docker-compose 中配合 read_only: true 使用
+
+# 4. 安全的环境变量
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    # 安全策略
+    SANDBOX_ENABLED=true \
+    SANDBOX_VIRTUAL_MODE=false \
+    # 禁止 Python 的 site-packages 写入
+    PYTHONNOUSERSITE=1
+
+# 5. 工作目录（只读挂载点）
+WORKDIR /workspace
+
+# 6. 预装依赖（减少运行时请求）
+COPY --chown=agent:agent pyproject.toml uv.lock ./
+COPY --chown=agent:agent src ./src
+
+# 7. 以非 root 用户运行
+USER agent
+
+# ================================================================
+# 文件系统限制层
+# ================================================================
+
+# 只读目录（通过 docker-compose overlay 覆盖）
+# - /workspace 只读挂载
+# - /tmp tmpfs 挂载
+# - /var/log 日志目录（如需）
+
+# 禁止写入的区域（通过 no-new-privileges 保护）
+# 禁止：
+# - /proc/sys (内核参数)
+# - /sys/fs/cgroup (cgroup 控制)
+# - /boot (启动参数)
+# - /dev (设备节点)
+# - /root (root 主目录)
+
+# ================================================================
+# 网络限制层
+# ================================================================
+
+# 只允许必要的出站连接（在 docker-compose 中配置）
+# - DNS (53)
+# - HTTPS (443) - 用于 LLM API 调用
+
+# ================================================================
+# 资源限制层（可在 docker-compose 中配置）
+# ================================================================
+
+# - memory: 512m (最大内存)
+# - pids: 100 (最大进程数)
+# - cpus: 0.5 (最大 CPU)
+# - cpu_shares: 512 (CPU 权重)
+
+# ================================================================
+# 卷挂载说明
+# ================================================================
+
+# 建议的只读挂载：
+# volumes:
+#   - ./workspace:/workspace:ro
+#   - ./skills:/home/agent/skills:ro
+#   - ./prompts:/home/agent/prompts:ro
+
+# 建议的 tmpfs（写入区域）：
+# tmpfs:
+#   - /tmp
+#   - /var/cache/pip
+
+# ================================================================
+# 入口点
+# ================================================================
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# 默认启动命令（可覆盖）
+CMD ["python", "-m", "uvicorn", "ai_agent.main:app", "--host", "0.0.0.0", "--port", "8000"]

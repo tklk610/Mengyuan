@@ -1,0 +1,184 @@
+# Docker Compose Sandbox Configuration
+# 容器级沙箱：文件系统限制、资源隔离、网络隔离
+
+services:
+  # ================================================================
+  # Agent 沙箱容器（高安全场景）
+  # ================================================================
+  agent-sandboxed:
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    container_name: novelcraft-agent-sandbox
+
+    # --------------------------------------------------------
+    # 安全：资源限制
+    # --------------------------------------------------------
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"              # 最多 0.5 CPU
+          memory: 512M             # 最多 512MB 内存
+          pids: 100               # 最多 100 进程
+        reservations:
+          cpus: "0.1"            # 最少 0.1 CPU
+          memory: 128M             # 最少 128MB 内存
+
+    # --------------------------------------------------------
+    # 安全：只读文件系统
+    # --------------------------------------------------------
+    read_only: true
+
+    # --------------------------------------------------------
+    # 安全：禁止新增权限
+    # --------------------------------------------------------
+    security_opt:
+      - no-new-privileges:true
+
+    # --------------------------------------------------------
+    # 安全：User 隔离
+    # --------------------------------------------------------
+    user: "1000:1000"           # 以非 root 用户运行
+
+    # --------------------------------------------------------
+    # 安全：Tmpfs 挂载（写入区域）
+    # --------------------------------------------------------
+    tmpfs:
+      - /tmp:size=50M,noexec,nosuid,nodev  # 临时文件目录（限制大小和权限）
+      - /var/cache:pids,size=20M,noexec,nosuid,nodev  # pip 缓存
+
+    # --------------------------------------------------------
+    # 安全：只读挂载（映射到宿主机目录）
+    # --------------------------------------------------------
+    volumes:
+      # 代码目录（只读）
+      - ./src:/workspace/src:ro
+      # Skills 目录（只读）
+      - ./skills:/home/agent/skills:ro
+      # Prompts 目录（只读）
+      - ./prompts:/home/agent/prompts:ro
+      # 导出目录（写入）
+      - ./exports:/workspace/exports:rw
+
+    # --------------------------------------------------------
+    # 网络隔离
+    # --------------------------------------------------------
+    networks:
+      - agent_network
+
+    # --------------------------------------------------------
+    # 环境变量
+    # --------------------------------------------------------
+    environment:
+      - SANDBOX_ENABLED=true
+      - SANDBOX_VIRTUAL_MODE=false     # 在沙箱中需要真实写文件
+      - SANDBOX_ROOT_DIR=/workspace
+      - SANDBOX_READ_ONLY_ROOT=false
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+
+    # --------------------------------------------------------
+    # 依赖服务
+    # --------------------------------------------------------
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+
+    # --------------------------------------------------------
+    # 健康检查
+    # --------------------------------------------------------
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    # --------------------------------------------------------
+    # 限制
+    # --------------------------------------------------------
+    stop_grace_period: 30s
+    cpus: 0.5
+
+  # ================================================================
+  # 标准 Agent 容器（非沙箱，用于一般场景）
+  # ================================================================
+  agent-standard:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: novelcraft-agent-standard
+    environment:
+      - SANDBOX_ENABLED=true
+      - SANDBOX_VIRTUAL_MODE=true     # 标准模式使用虚拟文件系统
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+    depends_on:
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    networks:
+      - agent_network
+
+  # ================================================================
+  # Redis（支持 LangGraph Checkpointer）
+  # ================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: novelcraft-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - agent_network
+
+  # ================================================================
+  # Qdrant（向量数据库）
+  # ================================================================
+  qdrant:
+    image: qdrant/qdrant:v1.7.4
+    container_name: novelcraft-qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - agent_network
+
+# ================================================================
+# 网络定义
+# ================================================================
+networks:
+  agent_network:
+    driver: bridge
+    driver_opts:
+      # 禁止容器间通信（按需启用）
+      # com.docker.network.bridge.enable_icc: "false"
+
+# ================================================================
+# 卷定义
+# ================================================================
+volumes:
+  qdrant_data:

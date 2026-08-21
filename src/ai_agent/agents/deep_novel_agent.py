@@ -196,12 +196,14 @@ def build_deep_novel_agent(
     *,
     skills_dir: str | None = None,
     interrupt_on: dict | None = None,
+    sandbox_config: dict | None = None,
 ) -> Any:
     """构建 DeepAgent 架构的 NovelCraft Agent
 
     Args:
         skills_dir: Skills 目录路径，默认为 ./skills
         interrupt_on: HITL 中断配置，默认为 {"write_chapter": True}
+        sandbox_config: 沙箱配置，默认为启用虚拟模式
 
     Returns:
         DeepAgent 实例
@@ -216,6 +218,43 @@ def build_deep_novel_agent(
     # 确定 skills 目录
     if skills_dir is None:
         skills_dir = os.path.join(os.path.dirname(__file__), "..", "..", "skills")
+
+    # 默认沙箱配置
+    if sandbox_config is None:
+        sandbox_config = {
+            "virtual_mode": True,
+            "scan_malicious": True,
+            "scan_injection": True,
+            "scan_sensitive": True,
+            "quarantine_suspicious": True,
+            "hitl_enabled": True,
+        }
+
+    # 创建沙箱（如果配置启用）
+    sandbox_backend = None
+    if sandbox_config.get("enabled", True):
+        from ai_agent.sandbox import FileSandbox
+
+        sandbox_backend = FileSandbox(
+            root_dir=".",
+            virtual_mode=sandbox_config.get("virtual_mode", True),
+            allowed_paths=sandbox_config.get(
+                "allowed_paths",
+                ["./skills", "./prompts/templates", "./workspace", "./exports"],
+            ),
+            denied_paths=sandbox_config.get(
+                "denied_paths",
+                ["./.git", "./.venv", "./src/ai_agent/config"],
+            ),
+            scan_malicious=sandbox_config.get("scan_malicious", True),
+            scan_injection=sandbox_config.get("scan_injection", True),
+            scan_sensitive=sandbox_config.get("scan_sensitive", True),
+            quarantine_suspicious=sandbox_config.get("quarantine_suspicious", True),
+        )
+        logger.info(
+            "deep_novel_agent.sandbox_enabled",
+            virtual_mode=sandbox_config.get("virtual_mode", True),
+        )
 
     # 默认 HITL 配置
     if interrupt_on is None:
@@ -246,7 +285,17 @@ def build_deep_novel_agent(
 
 当用户需要时，你可以委派任务给合适的 subagent。
 
+沙箱保护：
+- 所有文件操作都经过安全扫描
+- 危险操作需要人工审批
+- 敏感信息会被隔离
+
 请始终使用中文与用户交流。"""
+
+    # 使用沙箱作为 backend（如果可用）
+    backend = sandbox_backend if sandbox_backend else _FilesystemBackend(
+        root_dir=".", virtual_mode=True
+    )
 
     # 创建 DeepAgent
     agent = _create_deep_agent(
@@ -255,7 +304,7 @@ def build_deep_novel_agent(
         system_prompt=system_prompt,
         subagents=subagents,
         skills=[skills_dir] if os.path.exists(skills_dir) else [],
-        backend=_FilesystemBackend(root_dir=".", virtual_mode=True),
+        backend=backend,
         interrupt_on=interrupt_on,
         checkpointer=MemorySaver(),
         store=InMemoryStore(),

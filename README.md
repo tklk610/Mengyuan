@@ -6,6 +6,7 @@
 
 | 版本 | 状态 | 说明 |
 |------|------|------|
+| v1.1.0 | ✅ 完成 | 文件操作沙箱机制（七层防护 + 容器级沙箱） |
 | v0.5.0 | ✅ 完成 | DeepAgent 架构改造 |
 | v0.4.0 | ✅ 完成 | Phase 3: 多章节创作/导出/会话管理 |
 | v0.3.0 | ✅ 完成 | Phase 2: 风格学习与记忆 |
@@ -100,6 +101,62 @@ open http://localhost:8000/docs
 | `narrator` | 大纲规划 | `plan_outline` |
 | `scribe` | 章节写作 | `write_chapter` |
 | `stylist` | 风格分析 | `analyze_style` |
+
+## 沙箱机制
+
+项目实现了**两层沙箱**，提供七层防护架构：
+
+### 七层应用层沙箱（Python）
+
+| 层级 | 组件 | 功能 |
+|------|------|------|
+| Layer 1 | PathGuard | 路径遍历防护（`../` 逃逸检测）、系统敏感路径保护 |
+| Layer 2 | ContentGuard | 恶意代码/注入攻击/敏感信息检测 |
+| Layer 3 | PolicyGuard | 白名单/黑名单操作控制、配额限制 |
+| Layer 4 | VirtualFileSystem | 虚拟文件系统，内存操作不实际访问磁盘 |
+| Layer 5 | SkillSandboxLoader | Skill 安全加载、frontmatter 验证 |
+| Layer 6 | SandboxMiddleware | 危险操作拦截、HITL 人工审批 |
+| Layer 7 | SandboxPool | 用户级沙箱隔离、池管理、LRU 驱逐、预热机制 |
+
+### 用户隔离与池管理
+
+```python
+from ai_agent.sandbox import SandboxPool, FileSandbox
+
+# 用户级沙箱隔离
+pool = SandboxPool(max_size=10, idle_timeout=300)
+
+async with pool.get_sandbox("user_123") as sandbox:
+    await sandbox.write("novel_chapter1.txt", novel_content)
+    # 每个用户独立沙箱实例，root_dir = ./workspace/user_123
+```
+
+### 容器层沙箱（Docker）
+
+| 安全措施 | 配置 |
+|----------|------|
+| 只读文件系统 | `read_only: true` |
+| 禁止提权 | `no-new-privileges: true` |
+| 非 root 用户 | `user: "1000:1000"` |
+| 资源限制 | 0.5 CPU / 512MB 内存 / 100 进程 |
+| tmpfs 挂载 | `/tmp:size=50M,noexec,nosuid,nodev` |
+| 只读卷挂载 | `./src:/workspace/src:ro` |
+
+```bash
+# 启动沙箱容器
+docker-compose -f docker-compose.sandbox.yml up agent-sandboxed -d
+
+# 或在沙箱中运行命令
+docker run --rm \
+  --security-opt no-new-privileges:true \
+  --read-only \
+  --user 1000:1000 \
+  -v $(pwd)/src:/workspace:ro \
+  novelcraft-sandbox \
+  pytest tests/unit/ -v
+```
+
+详细配置见 [docs/SANDBOX.md](docs/SANDBOX.md)
 
 ## 测试
 

@@ -1,6 +1,6 @@
 [project]
 name = "novel-craft"
-version = "0.1.0"
+version = "1.1.0"
 description = "AI Novel Writing Multi-Agent System - PoC"
 authors = [
     { name = "NovelCraft Team" }

@@ -6,6 +6,55 @@
 
 ---
 
+## [1.1.0] - 2026-08-21
+
+### Added（新增）
+
+- **文件操作沙箱机制** —— 七层防护架构
+  - `src/ai_agent/sandbox/` —— 沙箱模块完整实现
+  - `src/ai_agent/sandbox/core/sandbox.py` —— FileSandbox 主类
+  - `src/ai_agent/sandbox/core/context.py` —— SandboxContext 上下文管理
+  - `src/ai_agent/sandbox/guards/path_guard.py` —— PathGuard 路径守卫
+  - `src/ai_agent/sandbox/guards/content_guard.py` —— ContentGuard 内容守卫
+  - `src/ai_agent/sandbox/guards/policy_guard.py` —— PolicyGuard 策略守卫
+  - `src/ai_agent/sandbox/backends/virtual_fs.py` —— VirtualFileSystem 虚拟文件系统
+  - `src/ai_agent/sandbox/loaders/skill_loader.py` —— SkillSandboxLoader
+  - `src/ai_agent/sandbox/middleware/sandbox_middleware.py` —— SandboxMiddleware HITL 中间件
+  - `src/ai_agent/sandbox/sandbox_pool.py` —— SandboxPool 用户隔离 + 池管理 + 预热
+
+- **沙箱安全特性**
+  - 路径遍历防护（`../` 逃逸检测）
+  - 恶意代码检测（eval/exec/subprocess/os.system 等）
+  - Prompt 注入检测（ignore instructions/DAN jailbreak 等）
+  - 敏感信息检测（API Key/私钥/数据库连接字符串）
+  - 虚拟文件系统（内存操作，不实际访问磁盘）
+  - 白名单/黑名单操作控制
+  - HITL 人工审批机制
+  - 用户级沙箱隔离（每个用户独立实例）
+  - 沙箱池预热机制
+
+- **容器级沙箱**
+  - `Dockerfile.sandbox` —— 沙箱容器镜像
+  - `docker-compose.sandbox.yml` —— 沙箱部署配置
+  - 只读文件系统、禁止提权、非 root 用户、资源限制
+
+- **沙箱单元测试** —— 48 个测试
+  - `tests/unit/sandbox/test_path_guard.py` —— 13 个测试
+  - `tests/unit/sandbox/test_content_guard.py` —— 13 个测试
+  - `tests/unit/sandbox/test_virtual_fs.py` —— 13 个测试
+  - `tests/unit/sandbox/test_sandbox_pool.py` —— 9 个测试
+
+### Changed（变更）
+
+- **DeepAgent 架构完善** —— `deep_novel_agent.py` 集成沙箱机制
+
+### Documentation（文档）
+
+- `docs/SANDBOX.md` —— Docker 沙箱安全配置详解
+- `scripts/run_in_sandbox.sh` —— 沙箱运行脚本
+
+---
+
 ## [0.5.0] - 2026-08-20
 
 ### Added（新增）
